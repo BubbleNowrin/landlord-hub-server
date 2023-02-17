@@ -9,6 +9,59 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 app.use(express.json());
 app.use(cors());
 
+// const states = [
+//     { name: "Alabama", code: "AL" },
+//     { name: "Alaska", code: "AK" },
+//     { name: "Arizona", code: "AZ" },
+//     { name: "Arkansas", code: "AR" },
+//     { name: "California", code: "CA" },
+//     { name: "Colorado", code: "CO" },
+//     { name: "Connecticut", code: "CT" },
+//     { name: "Delaware", code: "DE" },
+//     { name: "Florida", code: "FL" },
+//     { name: "Georgia", code: "GA" },
+//     { name: "Hawaii", code: "HI" },
+//     { name: "Idaho", code: "ID" },
+//     { name: "Illinois", code: "IL" },
+//     { name: "Indiana", code: "IN" },
+//     { name: "Iowa", code: "IA" },
+//     { name: "Kansas", code: "KS" },
+//     { name: "Kentucky", code: "KY" },
+//     { name: "Louisiana", code: "LA" },
+//     { name: "Maine", code: "ME" },
+//     { name: "Maryland", code: "MD" },
+//     { name: "Massachusetts", code: "MA" },
+//     { name: "Michigan", code: "MI" },
+//     { name: "Minnesota", code: "MN" },
+//     { name: "Mississippi", code: "MS" },
+//     { name: "Missouri", code: "MO" },
+//     { name: "MontanA", code: "MT" },
+//     { name: "Nebraska", code: "NE" },
+//     { name: "Nevada", code: "NV" },
+//     { name: "New Hampshire", code: "NH" },
+//     { name: "New Jersey", code: "NJ" },
+//     { name: "New Mexico", code: "NM" },
+//     { name: "New York", code: "NY" },
+//     { name: "North Carolina", code: "NC" },
+//     { name: "North Dakota", code: "ND" },
+//     { name: "Ohio", code: "OH" },
+//     { name: "Oklahoma", code: "OK" },
+//     { name: "Oregon", code: "OR" },
+//     { name: "Pennsylvania", code: "PA" },
+//     { name: "Rhode Island", code: "RI" },
+//     { name: "South Carolina", code: "SC" },
+//     { name: "South Dakota", code: "SD" },
+//     { name: "Tennessee", code: "TN" },
+//     { name: "Texas", code: "TX" },
+//     { name: "Utah", code: "UT" },
+//     { name: "Vermont", code: "VT" },
+//     { name: "Virginia", code: "VA" },
+//     { name: "Washington", code: "WA" },
+//     { name: "West Virginia", code: "WV" },
+//     { name: "Wisconsin", code: "WI" },
+//     { name: "Wyoming", code: "WY" },
+//   ];
+
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.ng69xjx.mongodb.net/?retryWrites=true&w=majority`;
 // console.log(uri);
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
@@ -26,6 +79,7 @@ async function run() {
         //collections
         const usersCollection = client.db('landlordHub').collection('users');
         const propertyCollection = client.db('landlordHub').collection('property');
+        const statesCollection = client.db('landlordHub').collection('States');
 
         //add users
         app.post("/users", async (req, res) => {
@@ -51,13 +105,13 @@ async function run() {
         //get user specific property
         app.get('/property', async (req, res) => {
             const email = req.query.email;
-            console.log(email);
+            // console.log(email);
             const query = { email: email }
-            const result = await propertyCollection.find(query).toArray();
-
+            const data = await propertyCollection.find(query).toArray();
+            // console.log(data);
+            const result = data?.filter(prc => prc.archived !== true);
+            // console.log(result);
             return res.send(result);
-
-
         })
 
         //get user specific property
@@ -78,12 +132,25 @@ async function run() {
             const updatedDoc = {
                 $set: {
                     rent: property?.rent,
-                    address: property?.address,
                     status: property?.status,
                     bedroom: property?.bedroom,
-                    parking: property?.parking,
-                    bathroom: property?.bathroom,
-                    img: property?.img
+                    bathroom: property?.bathroom
+                }
+            }
+            const result = await propertyCollection.updateOne(filter, updatedDoc, options);
+            res.send(result);
+        })
+
+        //update image
+        app.put('/upload/:id', async (req, res) => {
+            const id = req.params.id;
+            const propImage = req.body;
+            console.log(propImage);
+            const filter = { _id: new ObjectId(id) }
+            const options = { upsert: true };
+            const updatedDoc = {
+                $set: {
+                    img: propImage?.img
                 }
             }
             const result = await propertyCollection.updateOne(filter, updatedDoc, options);
@@ -119,6 +186,78 @@ async function run() {
             res.send(result);
         })
 
+        // year specific data
+        // app.get('/year/:id', async (req, res) => {
+        //     const id = req.params.id;
+        //     const year = req.query.year;
+        //     // console.log(year);
+        //     const query = {
+        //         _id: new ObjectId(id)
+        //     }
+        //     const data = await propertyCollection.findOne(query);
+
+        //     console.log(data.calculations);
+        //     const yearCalculations = data?.calculations?.filter(exp => exp.date.slice(0, 4) === year);
+        //     // console.log(yearCalculations);
+        //     res.send({ data, yearCalculations });
+        // })
+
+        //delete specific property
+        app.delete("/delete/:id", async (req, res) => {
+            const id = req.params.id;
+            // console.log(id);
+            const filter = { _id: new ObjectId(id) }
+            const result = await propertyCollection.deleteOne(filter);
+            res.send(result);
+        })
+
+        //Move specific property to archive
+        app.put("/archived/:id", async (req, res) => {
+            const id = req.params.id;
+            // console.log(id);
+            const filter = { _id: new ObjectId(id) }
+            const options = { upsert: true };
+            const updatedDoc = {
+                $set: {
+                    archived: true
+                },
+            };
+            const result = await propertyCollection.updateOne(filter, updatedDoc, options);
+            res.send(result);
+        })
+
+        app.get('/arhived-property', async (req, res) => {
+            const email = req.query.email;
+            // console.log(email);
+            const query = { email: email }
+            const data = await propertyCollection.find(query).toArray();
+            // console.log(data);
+            const result = data?.filter(prc => prc.archived === true);
+            // console.log(result);
+            return res.send(result);
+        })
+
+        //Move specific property from archive to my Property
+        app.put("/reactivate/:id", async (req, res) => {
+            const id = req.params.id;
+            // console.log(id);
+            const filter = { _id: new ObjectId(id) }
+            const options = { upsert: true };
+            const updatedDoc = {
+                $set: {
+                    archived: false
+                },
+            };
+            const result = await propertyCollection.updateOne(filter, updatedDoc, options);
+            res.send(result);
+        })
+
+        //get all the states
+        app.get('/states', async (req, res) => {
+            const query = {};
+            const result = await statesCollection.find(query).toArray();
+            res.send(result);
+        })
 
     }
 
