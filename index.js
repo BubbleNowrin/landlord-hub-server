@@ -259,6 +259,14 @@ async function run() {
             res.send(result);
         })
 
+        // update expense image 
+        app.put("/update_image/:id", async(req,res)=>{
+            const id = req.params.id;
+            const data = req.body;
+            
+            
+        })
+
     }
 
     finally {
