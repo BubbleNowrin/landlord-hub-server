@@ -62,7 +62,7 @@ app.use(cors());
 //     { name: "Wyoming", code: "WY" },
 //   ];
 
-const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.ng69xjx.mongodb.net/?retryWrites=true&w=majority`;
+const uri = `mongodb+srv://landlordDB:rAbl5SNHMn83C90D@cluster0.ng69xjx.mongodb.net/?retryWrites=true&w=majority`;
 // console.log(uri);
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 
@@ -260,11 +260,20 @@ async function run() {
         })
 
         // update expense image 
-        app.put("/update_image/:id", async(req,res)=>{
+        app.put("/update_image/:id", async (req, res) => {
             const id = req.params.id;
             const data = req.body;
-            
-            
+            const img = data.img;
+            const expId = data.id;
+
+            // const options = { upsert: true }
+            // console.log(img, expId);
+            const result =
+                await propertyCollection.updateOne(
+                    { _id: new ObjectId(id), "calculations._id": expId },
+                    { $set: { "calculations.$.receipt": img } }, { upsert: true }
+                )
+            res.send(result);
         })
 
     }
