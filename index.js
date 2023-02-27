@@ -79,6 +79,7 @@ async function run() {
         //collections
         const usersCollection = client.db('landlordHub').collection('users');
         const propertyCollection = client.db('landlordHub').collection('property');
+        const calculationCollection = client.db('landlordHub').collection('calculations');
         const statesCollection = client.db('landlordHub').collection('States');
 
         //add users
@@ -157,33 +158,155 @@ async function run() {
             res.send(result);
         })
 
-        //add expenses
-        app.put('/calculation/:id', async (req, res) => {
+        // //add expenses
+        // app.put('/calculation/:id', async (req, res) => {
+        //     const id = req.params.id;
+        //     // console.log(id);
+        //     const expenses = req.body;
+        //     const filter = { _id: new ObjectId(id) }
+        //     const calc = await propertyCollection.findOne(filter);
+        //     const calculations = calc?.calculations;
+        //     const options = { upsert: true };
+
+        //     if (calculations) {
+        //         const updatedDoc = {
+        //             $set: {
+        //                 calculations: [...calculations, expenses]
+        //             }
+        //         }
+        //         const result = await propertyCollection.updateOne(filter, updatedDoc, options);
+        //         return res.send(result);
+        //     }
+
+        //     const updatedDoc = {
+        //         $set: {
+        //             calculations: [expenses]
+        //         },
+        //     };
+        //     const result = await propertyCollection.updateOne(filter, updatedDoc, options);
+        //     res.send(result);
+        // })
+
+        // add expense and payment
+        app.post("/calculation", async(req,res)=>{
+            const body = req.body;
+            console.log(body)
+            const result = await calculationCollection.insertOne(body);
+            res.send(result); 
+        })
+        
+        // get calculation by property id 
+        app.get("/calculations/:id", async(req,res)=>{
             const id = req.params.id;
-            // console.log(id);
-            const expenses = req.body;
-            const filter = { _id: new ObjectId(id) }
-            const calc = await propertyCollection.findOne(filter);
-            const calculations = calc?.calculations;
-            const options = { upsert: true };
+            const year = req.query.year;
+            const filter = { propertyId: id, date: { $regex: year } };
+            const query = {propertyId: id}
+            let years = [];
+            const forYear = await calculationCollection.find(query).sort({date: -1}).toArray();
+            const yearsArr = forYear?.map((yrs) => {
+              const yr = yrs.date.slice(0, 4);
 
-            if (calculations) {
-                const updatedDoc = {
-                    $set: {
-                        calculations: [...calculations, expenses]
-                    }
-                }
-                const result = await propertyCollection.updateOne(filter, updatedDoc, options);
-                return res.send(result);
-            }
-
+              if (!years.includes(yr)) {
+                years.push(yr);
+              }
+              return years;
+            });
+            const result = await calculationCollection
+              .find(filter)
+              .sort({ date: -1 })
+              .toArray();
+            res.send({calculations:result, allYear:years})
+        })
+        
+        // upload photo 
+        app.put("/upload_photo/:id", async(req,res)=>{
+            const img = req.body.img;
+            const id = req.params.id;
+            console.log(img,id)
+            const query = {_id: new ObjectId(id)}
             const updatedDoc = {
-                $set: {
-                    calculations: [expenses]
-                },
-            };
-            const result = await propertyCollection.updateOne(filter, updatedDoc, options);
+                $set:{
+                    receipt: img
+                }
+            }
+            const options = {upsert: true};
+            const result = await calculationCollection.updateOne(query,updatedDoc,options);
             res.send(result);
+        })
+
+        // get dashboard data 
+        app.get("/dashboard",async(req,res)=>{
+            const email = req.query.email;
+            const month = req.query.month;
+            const queryYear = req.query.year;
+            const year = month ? queryYear + "-" + month : queryYear;
+            console.log(year)
+            const filter = {
+              propertyOwner: email,
+             date: { $regex: year}
+            };
+            const result = await calculationCollection.find(filter).sort({date: -1}).toArray();
+            // year month expenses payment 
+            let years = [];
+            let months = [];
+            let properties = [];
+            let expenses = 0;
+            let payments = 0;
+            let total = 0;
+            let cashflow = 0;
+            let cashflowData = [];
+            const query = {propertyOwner: email}
+            const forYear = await calculationCollection
+              .find(query)
+              .sort({ date: -1 })
+              .toArray();
+            //   expenses and payment calculation 
+            const calculataionArray = result.map(exp => {
+
+                const month = exp.date.slice(5, 7);
+                
+                
+                if (exp.expense) {
+                  expenses += parseFloat(exp.amount);
+                  
+                }
+                else {
+                  payments += parseFloat(exp.amount);
+                  
+                }
+                if (!months.includes(month)) {
+                  months.push(month);
+                }
+               
+                
+                total = parseFloat(expenses) + parseFloat(payments);
+                cashflow = parseFloat(payments) - parseFloat(expenses);
+            })
+            //   year and month array 
+            const yearsArr = forYear?.map((yrs) => {
+              const yr = yrs.date.slice(0, 4);
+              console.log(yrs)
+              const street = yrs.street;
+              if (!years.includes(yr)) {
+                years.push(yr);
+              }
+              if(!properties.includes(street)){
+                properties.push(street)
+              }
+            });
+            
+            res.send({
+              calculations: result,
+              allYear: years,
+              allMonth: months,
+              allProperty: properties,
+              expenses,
+              payments,
+              total,
+              cashflow,
+            });
+            
+            
         })
 
         // year specific data
