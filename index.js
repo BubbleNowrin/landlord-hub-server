@@ -314,7 +314,6 @@ async function run() {
 
           const propertyResult = await calculationCollection
             .find(propertyQuery)
-            .sort({ date: -1 })
             .toArray();
           const propertyArray = propertyResult.map((yrs) => {
             const month = yrs.date.slice(0, 7);
@@ -358,7 +357,7 @@ async function run() {
               }
             }
           });
-          console.log(months);
+          
           res.send({
             calculations: result,
             allYear: years,
