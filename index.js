@@ -358,6 +358,8 @@ async function run() {
             }
           });
           
+          const sortedCashflow=  cashflowData.sort((a, b) => new Date(a.date) - new Date(b.date))
+          
           res.send({
             calculations: result,
             allYear: years,
@@ -367,7 +369,7 @@ async function run() {
             payments,
             total,
             cashflow,
-            cashflowData,
+            cashflowData:sortedCashflow,
           });
         })
 
