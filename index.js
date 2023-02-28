@@ -236,131 +236,170 @@ async function run() {
 
         // get dashboard data 
         app.get("/dashboard",async(req,res)=>{
-            // email month year 
-            const email = req.query.email;
-            const month = req.query.month;
-            const queryYear = req.query.year;
-            const year = month ? queryYear + "-" + month : queryYear;
-            const property = req.query.street;
-            // query 
-            const propertyQuery = property
-              ? { street: property, propertyOwner: email }
-              : { propertyOwner: email };
-            
-            const filter = {
-              propertyOwner: email,
-             date: { $regex: year}
-            };
-            
-            const result = await calculationCollection.find(filter).sort({date: -1}).toArray();
-            // year month expenses payment variable 
-            let years = [];
-            let months = [];
-            let properties = [];
-            let expenses = 0;
-            let payments = 0;
-            let total = 0;
-            let cashflow = 0;
-            let cashflowData = [];
-            const query = {propertyOwner: email}
-            const forYear = await calculationCollection
-              .find(query)
-              .sort({ date: -1 })
-              .toArray();
-            //   expenses and payment calculation 
-            const calculataionArray = result.map(exp => {
+          // email month year
+          const email = req.query.email;
+          const month = req.query.month;
+          const queryYear = req.query.year;
+          const year = month ? queryYear + "-" + month : queryYear;
+          const property = req.query.street;
+          // query
+          const propertyQuery = property
+            ? { street: property, propertyOwner: email }
+            : { propertyOwner: email };
 
-                const month = exp.date.slice(5, 7);
-                
-                
-                if (exp.expense) {
-                  expenses += parseFloat(exp.amount);
-                  
-                }
-                else {
-                  payments += parseFloat(exp.amount);
-                  
-                }
-                if (!months.includes(month)) {
-                  months.push(month);
-                }
-               
-                
-                total = parseFloat(expenses) + parseFloat(payments);
-                cashflow = parseFloat(payments) - parseFloat(expenses);
-            })
-            //   year and month array 
-            const yearsArr = forYear?.map((yrs) => {
-              const yr = yrs.date.slice(0, 4);
-              const street = yrs.street;
-              if (!years.includes(yr)) {
-                years.push(yr);
+          const filter = {
+            propertyOwner: email,
+            date: { $regex: year },
+          };
+
+          const monthQuery = {
+            propertyOwner: email,
+            date: { $regex: queryYear },
+          };
+
+          const result = await calculationCollection
+            .find(filter)
+            .sort({ date: -1 })
+            .toArray();
+          // year month expenses payment variable
+          let years = [];
+          let months = [];
+          let properties = [];
+          let expenses = 0;
+          let payments = 0;
+          let total = 0;
+          let cashflow = 0;
+          let cashflowData = [];
+          const query = { propertyOwner: email };
+
+          // make month array
+          const monthArr = await calculationCollection
+            .find(monthQuery)
+            .sort({ date: -1 })
+            .toArray();
+          monthArr.map((singleMonth) => {
+            const month = singleMonth.date.slice(5, 7);
+            if (!months.includes(month)) {
+              months.push(month);
+            }
+          });
+
+          const forYear = await calculationCollection
+            .find(query)
+            .sort({ date: -1 })
+            .toArray();
+          //   expenses and payment calculation
+          const calculataionArray = result.map((exp) => {
+            if (exp.expense) {
+              expenses += parseFloat(exp.amount);
+            } else {
+              payments += parseFloat(exp.amount);
+            }
+
+            total = parseFloat(expenses) + parseFloat(payments);
+            cashflow = parseFloat(payments) - parseFloat(expenses);
+          });
+          //   year and month array
+          const yearsArr = forYear?.map((yrs) => {
+            const yr = yrs.date.slice(0, 4);
+            const street = yrs.street;
+            if (!years.includes(yr)) {
+              years.push(yr);
+            }
+            if (!properties.includes(street)) {
+              properties.push(street);
+            }
+          });
+          // for property
+
+          const propertyResult = await calculationCollection
+            .find(propertyQuery)
+            .sort({ date: -1 })
+            .toArray();
+          const propertyArray = propertyResult.map((yrs) => {
+            const month = yrs.date.slice(0, 7);
+            if (cashflowData.length === 0) {
+              const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
+              const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
+              cashflowData.push({
+                date: month,
+                paymentAmount: payment,
+                expenseAmount: expense,
+                cashflow: yrs?.expense
+                  ? parseFloat(yrs?.amount)
+                  : 0 - yrs?.payment
+                  ? parseFloat(yrs?.amount)
+                  : 0,
+              });
+            } else if (cashflowData.length > 0) {
+              const selectedMonth = cashflowData?.find(
+                (data) => data?.date == month
+              );
+              if (selectedMonth) {
+                const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
+                const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
+
+                selectedMonth.paymentAmount += payment;
+                selectedMonth.expenseAmount += expense;
+                selectedMonth.cashflow =
+                  selectedMonth.paymentAmount - selectedMonth.expenseAmount;
+              } else {
+                const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
+                const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
+                cashflowData = [
+                  ...cashflowData,
+                  {
+                    date: month,
+                    paymentAmount: payment,
+                    expenseAmount: expense,
+                    cashflow: payment - expense,
+                  },
+                ];
               }
-              if(!properties.includes(street)){
-                properties.push(street)
-              }
-             
-            });
-            // for property 
-            
-            const propertyResult = await calculationCollection.find(propertyQuery).sort({date:-1}).toArray();
-            const propertyArray = propertyResult.map(yrs=> {
-                const month = yrs.date.slice(0, 7);
-                 if (cashflowData.length === 0) {
-                    const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
-                    const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
-                   cashflowData.push({
-                     date: month,
-                     paymentAmount: payment,
-                     expenseAmount: expense,
-                     cashflow: yrs?.expense
-                       ? parseFloat(yrs?.amount)
-                       : 0 - yrs?.payment
-                       ? parseFloat(yrs?.amount)
-                       : 0,
-                   });
-                 } else if (cashflowData.length > 0) {
-                   const selectedMonth = cashflowData?.find(
-                     (data) => data?.date == month
-                   );
-                   if (selectedMonth) {
-                       const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
-                     const expense =  yrs?.expense ? parseFloat(yrs?.amount) : 0;
-                     
-                     selectedMonth.paymentAmount += payment;
-                     selectedMonth.expenseAmount += expense;
-                     selectedMonth.cashflow = selectedMonth.paymentAmount - selectedMonth.expenseAmount;
-                   } else {
-                       const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
-                     const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
-                     cashflowData = [
-                       ...cashflowData,
-                       {
-                         date: month,
-                         paymentAmount: payment,
-                         expenseAmount: expense,
-                         cashflow: payment - expense,
-                       },
-                     ];
-                   }
-                 }
-            })
-            
-            res.send({
-              calculations: result,
-              allYear: years,
-              allMonth: months,
-              allProperty: properties,
-              expenses,
-              payments,
-              total,
-              cashflow,
-              cashflowData
-            });
-            
-            
+            }
+          });
+          console.log(months);
+          res.send({
+            calculations: result,
+            allYear: years,
+            allMonth: months,
+            allProperty: properties,
+            expenses,
+            payments,
+            total,
+            cashflow,
+            cashflowData,
+          });
         })
 
+        // update table data 
+        app.put('/update-calculation/:id',async(req,res)=>{
+          const id = req.params.id;
+          const date = req.body.date;
+          const amount = req.body.amount;
+          const description = req.body.description;
+          const category = req.body.category;
+          const query = {_id: new ObjectId(id)}
+          const options = {upsert: true}
+          const updatedDoc = {
+            $set:{
+              date,
+              amount,
+              description,
+              category
+            }
+          }
+          const result = await calculationCollection.updateOne(query,updatedDoc,options);
+          res.send(result)
+        })
+
+        // delete calcualtion 
+        app.delete('/delete-calculation/:id', async(req,res)=>{
+          const id = req.params.id;
+          const query = {_id: new ObjectId(id)}
+          const result = await calculationCollection.deleteOne(query);
+          res.send(result)
+        })
         // year specific data
         // app.get('/year/:id', async (req, res) => {
         //     const id = req.params.id;
