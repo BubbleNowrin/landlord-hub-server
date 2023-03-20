@@ -149,10 +149,11 @@ async function run() {
         })
 
         //get user specific property
-        app.get('/property/:id', async (req, res) => {
+        app.get('/property/:id', verifyJWT, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) }
             const result = await propertyCollection.findOne(query);
+            console.log(result);
             res.send(result)
         })
 
