@@ -1,9 +1,11 @@
 const express = require('express');
 const app = express();
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const port = process.env.PORT || 5000;
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+
 
 //midlleware
 app.use(express.json());
@@ -62,9 +64,27 @@ app.use(cors());
 //     { name: "Wyoming", code: "WY" },
 //   ];
 
-const uri = `mongodb+srv://landlordDB:rAbl5SNHMn83C90D@cluster0.ng69xjx.mongodb.net/?retryWrites=true&w=majority`;
+const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASSWORD}@cluster0.ng69xjx.mongodb.net/?retryWrites=true&w=majority`;
 // console.log(uri);
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
+
+function verifyJWT(req, res, next) {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+        res.status(401).send({ message: 'unauthorized access' })
+    }
+
+    const token = authHeader.split(' ')[1];
+    jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
+        if (err) {
+            res.status(403).send({ message: "forbidden access" })
+        }
+        req.decoded = decoded;
+        next();
+    })
+
+}
 
 app.get('/', (req, res) => {
     res.send('landlord server running');
@@ -82,6 +102,13 @@ async function run() {
         const calculationCollection = client.db('landlordHub').collection('calculations');
         const statesCollection = client.db('landlordHub').collection('States');
 
+        //jwt
+        app.post('/jwt', (req, res) => {
+            const user = req.body;
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1h" })
+            res.send({ token })
+        })
+
         //add users
         app.post("/users", async (req, res) => {
             const user = req.body;
@@ -96,15 +123,21 @@ async function run() {
         });
 
         //add property
-        app.post('/add-property', async (req, res) => {
+        app.post('/add-property', verifyJWT, async (req, res) => {
             const property = req.body;
-            console.log(property);
+            // console.log(property);
             const result = await propertyCollection.insertOne(property);
             res.send(result);
         })
 
         //get user specific property
-        app.get('/property', async (req, res) => {
+        app.get('/property', verifyJWT, async (req, res) => {
+
+            const decoded = req.decoded;
+            // console.log("inside", decoded);
+            if (decoded.email !== req.query.email) {
+                res.status(403).send({ message: "forbidden access" })
+            }
             const email = req.query.email;
             // console.log(email);
             const query = { email: email }
@@ -124,7 +157,7 @@ async function run() {
         })
 
         //update property
-        app.put('/edit-property/:id', async (req, res) => {
+        app.put('/edit-property/:id', verifyJWT, async (req, res) => {
             const id = req.params.id;
             const property = req.body;
             console.log(property);
@@ -143,7 +176,7 @@ async function run() {
         })
 
         //update image
-        app.put('/upload/:id', async (req, res) => {
+        app.put('/upload/:id', verifyJWT, async (req, res) => {
             const id = req.params.id;
             const propImage = req.body;
             console.log(propImage);
@@ -188,218 +221,226 @@ async function run() {
         // })
 
         // add expense and payment
-        app.post("/calculation", async(req,res)=>{
+        app.post("/calculation", verifyJWT, async (req, res) => {
             const body = req.body;
             console.log(body)
             const result = await calculationCollection.insertOne(body);
-            res.send(result); 
+            res.send(result);
         })
-        
+
         // get calculation by property id 
-        app.get("/calculations/:id", async(req,res)=>{
+        app.get("/calculations/:id", verifyJWT, async (req, res) => {
             const id = req.params.id;
             const year = req.query.year;
             const filter = { propertyId: id, date: { $regex: year } };
-            const query = {propertyId: id}
+            const query = { propertyId: id }
             let years = [];
-            const forYear = await calculationCollection.find(query).sort({date: -1}).toArray();
+            const forYear = await calculationCollection.find(query).sort({ date: -1 }).toArray();
             const yearsArr = forYear?.map((yrs) => {
-              const yr = yrs.date.slice(0, 4);
+                const yr = yrs.date.slice(0, 4);
 
-              if (!years.includes(yr)) {
-                years.push(yr);
-              }
-              return years;
+                if (!years.includes(yr)) {
+                    years.push(yr);
+                }
+                return years;
             });
             const result = await calculationCollection
-              .find(filter)
-              .sort({ date: -1 })
-              .toArray();
-            res.send({calculations:result, allYear:years})
+                .find(filter)
+                .sort({ date: -1 })
+                .toArray();
+            res.send({ calculations: result, allYear: years })
         })
-        
+
         // upload photo 
-        app.put("/upload_photo/:id", async(req,res)=>{
+        app.put("/upload_photo/:id", verifyJWT, async (req, res) => {
             const img = req.body.img;
             const id = req.params.id;
-            console.log(img,id)
-            const query = {_id: new ObjectId(id)}
+            console.log(img, id)
+            const query = { _id: new ObjectId(id) }
             const updatedDoc = {
-                $set:{
+                $set: {
                     receipt: img
                 }
             }
-            const options = {upsert: true};
-            const result = await calculationCollection.updateOne(query,updatedDoc,options);
+            const options = { upsert: true };
+            const result = await calculationCollection.updateOne(query, updatedDoc, options);
             res.send(result);
         })
 
         // get dashboard data 
-        app.get("/dashboard",async(req,res)=>{
-          // email month year
-          const email = req.query.email;
-          const month = req.query.month;
-          const queryYear = req.query.year;
-          const year = month ? queryYear + "-" + month : queryYear;
-          const property = req.query.street;
-          // query
-          const propertyQuery = property
-            ? { street: property, propertyOwner: email }
-            : { propertyOwner: email };
+        app.get("/dashboard", verifyJWT, async (req, res) => {
 
-          const filter = {
-            propertyOwner: email,
-            date: { $regex: year },
-          };
-
-          const monthQuery = {
-            propertyOwner: email,
-            date: { $regex: queryYear },
-          };
-
-          const result = await calculationCollection
-            .find(filter)
-            .sort({ date: -1 })
-            .toArray();
-          // year month expenses payment variable
-          let years = [];
-          let months = [];
-          let properties = [];
-          let expenses = 0;
-          let payments = 0;
-          let total = 0;
-          let cashflow = 0;
-          let cashflowData = [];
-          const query = { propertyOwner: email };
-
-          // make month array
-          const monthArr = await calculationCollection
-            .find(monthQuery)
-            .sort({ date: -1 })
-            .toArray();
-          monthArr.map((singleMonth) => {
-            const month = singleMonth.date.slice(5, 7);
-            if (!months.includes(month)) {
-              months.push(month);
+            const decoded = req.decoded;
+            // console.log("inside", decoded);
+            if (decoded.email !== req.query.email) {
+                res.status(403).send({ message: "forbidden access" })
             }
-          });
+            // email month year
+            const email = req.query.email;
+            const month = req.query.month;
+            const queryYear = req.query.year;
+            const year = month ? queryYear + "-" + month : queryYear;
+            const property = req.query.street;
+            // query
+            const propertyQuery = property
+                ? { street: property, propertyOwner: email }
+                : { propertyOwner: email };
 
-          const forYear = await calculationCollection
-            .find(query)
-            .sort({ date: -1 })
-            .toArray();
-          //   expenses and payment calculation
-          const calculataionArray = result.map((exp) => {
-            if (exp.expense) {
-              expenses += parseFloat(exp.amount);
-            } else {
-              payments += parseFloat(exp.amount);
-            }
+            const filter = {
+                propertyOwner: email,
+                date: { $regex: year },
+            };
 
-            total = parseFloat(expenses) + parseFloat(payments);
-            cashflow = parseFloat(payments) - parseFloat(expenses);
-          });
-          //   year and month array
-          const yearsArr = forYear?.map((yrs) => {
-            const yr = yrs.date.slice(0, 4);
-            const street = yrs.street;
-            if (!years.includes(yr)) {
-              years.push(yr);
-            }
-            if (!properties.includes(street)) {
-              properties.push(street);
-            }
-          });
-          // for property
+            const monthQuery = {
+                propertyOwner: email,
+                date: { $regex: queryYear },
+            };
 
-          const propertyResult = await calculationCollection
-            .find(propertyQuery)
-            .toArray();
-          const propertyArray = propertyResult.map((yrs) => {
-            const month = yrs.date.slice(0, 7);
-            if (cashflowData.length === 0) {
-              const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
-              const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
-              cashflowData.push({
-                date: month,
-                paymentAmount: payment,
-                expenseAmount: expense,
-                cashflow: yrs?.expense
-                  ? parseFloat(yrs?.amount)
-                  : 0 - yrs?.payment
-                  ? parseFloat(yrs?.amount)
-                  : 0,
-              });
-            } else if (cashflowData.length > 0) {
-              const selectedMonth = cashflowData?.find(
-                (data) => data?.date == month
-              );
-              if (selectedMonth) {
-                const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
-                const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
+            const result = await calculationCollection
+                .find(filter)
+                .sort({ date: -1 })
+                .toArray();
+            // year month expenses payment variable
+            let years = [];
+            let months = [];
+            let properties = [];
+            let expenses = 0;
+            let payments = 0;
+            let total = 0;
+            let cashflow = 0;
+            let cashflowData = [];
+            const query = { propertyOwner: email };
 
-                selectedMonth.paymentAmount += payment;
-                selectedMonth.expenseAmount += expense;
-                selectedMonth.cashflow =
-                  selectedMonth.paymentAmount - selectedMonth.expenseAmount;
-              } else {
-                const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
-                const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
-                cashflowData = [
-                  ...cashflowData,
-                  {
-                    date: month,
-                    paymentAmount: payment,
-                    expenseAmount: expense,
-                    cashflow: payment - expense,
-                  },
-                ];
-              }
-            }
-          });
-          
-          const sortedCashflow=  cashflowData.sort((a, b) => new Date(a.date) - new Date(b.date))
-          
-          res.send({
-            calculations: result,
-            allYear: years,
-            allMonth: months,
-            allProperty: properties,
-            expenses,
-            payments,
-            total,
-            cashflow,
-            cashflowData:sortedCashflow,
-          });
+            // make month array
+            const monthArr = await calculationCollection
+                .find(monthQuery)
+                .sort({ date: -1 })
+                .toArray();
+            monthArr.map((singleMonth) => {
+                const month = singleMonth.date.slice(5, 7);
+                if (!months.includes(month)) {
+                    months.push(month);
+                }
+            });
+
+            const forYear = await calculationCollection
+                .find(query)
+                .sort({ date: -1 })
+                .toArray();
+            //   expenses and payment calculation
+            const calculataionArray = result.map((exp) => {
+                if (exp.expense) {
+                    expenses += parseFloat(exp.amount);
+                } else {
+                    payments += parseFloat(exp.amount);
+                }
+
+                total = parseFloat(expenses) + parseFloat(payments);
+                cashflow = parseFloat(payments) - parseFloat(expenses);
+            });
+            //   year and month array
+            const yearsArr = forYear?.map((yrs) => {
+                const yr = yrs.date.slice(0, 4);
+                const street = yrs.street;
+                if (!years.includes(yr)) {
+                    years.push(yr);
+                }
+                if (!properties.includes(street)) {
+                    properties.push(street);
+                }
+            });
+            // for property
+
+            const propertyResult = await calculationCollection
+                .find(propertyQuery)
+                .toArray();
+            const propertyArray = propertyResult.map((yrs) => {
+                const month = yrs.date.slice(0, 7);
+                if (cashflowData.length === 0) {
+                    const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
+                    const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
+                    cashflowData.push({
+                        date: month,
+                        paymentAmount: payment,
+                        expenseAmount: expense,
+                        cashflow: yrs?.expense
+                            ? parseFloat(yrs?.amount)
+                            : 0 - yrs?.payment
+                                ? parseFloat(yrs?.amount)
+                                : 0,
+                    });
+                } else if (cashflowData.length > 0) {
+                    const selectedMonth = cashflowData?.find(
+                        (data) => data?.date == month
+                    );
+                    if (selectedMonth) {
+                        const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
+                        const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
+
+                        selectedMonth.paymentAmount += payment;
+                        selectedMonth.expenseAmount += expense;
+                        selectedMonth.cashflow =
+                            selectedMonth.paymentAmount - selectedMonth.expenseAmount;
+                    } else {
+                        const payment = yrs?.payment ? parseFloat(yrs?.amount) : 0;
+                        const expense = yrs?.expense ? parseFloat(yrs?.amount) : 0;
+                        cashflowData = [
+                            ...cashflowData,
+                            {
+                                date: month,
+                                paymentAmount: payment,
+                                expenseAmount: expense,
+                                cashflow: payment - expense,
+                            },
+                        ];
+                    }
+                }
+            });
+
+            const sortedCashflow = cashflowData.sort((a, b) => new Date(a.date) - new Date(b.date))
+
+            console.log(months);
+
+            res.send({
+                calculations: result,
+                allYear: years,
+                allMonth: months,
+                allProperty: properties,
+                expenses,
+                payments,
+                total,
+                cashflow,
+                cashflowData: sortedCashflow,
+            });
         })
 
         // update table data 
-        app.put('/update-calculation/:id',async(req,res)=>{
-          const id = req.params.id;
-          const date = req.body.date;
-          const amount = req.body.amount;
-          const description = req.body.description;
-          const category = req.body.category;
-          const query = {_id: new ObjectId(id)}
-          const options = {upsert: true}
-          const updatedDoc = {
-            $set:{
-              date,
-              amount,
-              description,
-              category
+        app.put('/update-calculation/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const date = req.body.date;
+            const amount = req.body.amount;
+            const description = req.body.description;
+            const category = req.body.category;
+            const query = { _id: new ObjectId(id) }
+            const options = { upsert: true }
+            const updatedDoc = {
+                $set: {
+                    date,
+                    amount,
+                    description,
+                    category
+                }
             }
-          }
-          const result = await calculationCollection.updateOne(query,updatedDoc,options);
-          res.send(result)
+            const result = await calculationCollection.updateOne(query, updatedDoc, options);
+            res.send(result)
         })
 
         // delete calcualtion 
-        app.delete('/delete-calculation/:id', async(req,res)=>{
-          const id = req.params.id;
-          const query = {_id: new ObjectId(id)}
-          const result = await calculationCollection.deleteOne(query);
-          res.send(result)
+        app.delete('/delete-calculation/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) }
+            const result = await calculationCollection.deleteOne(query);
+            res.send(result)
         })
         // year specific data
         // app.get('/year/:id', async (req, res) => {
@@ -418,7 +459,7 @@ async function run() {
         // })
 
         //delete specific property
-        app.delete("/delete/:id", async (req, res) => {
+        app.delete("/delete/:id", verifyJWT, async (req, res) => {
             const id = req.params.id;
             // console.log(id);
             const filter = { _id: new ObjectId(id) }
@@ -427,7 +468,7 @@ async function run() {
         })
 
         //Move specific property to archive
-        app.put("/archived/:id", async (req, res) => {
+        app.put("/archived/:id", verifyJWT, async (req, res) => {
             const id = req.params.id;
             // console.log(id);
             const filter = { _id: new ObjectId(id) }
@@ -441,7 +482,14 @@ async function run() {
             res.send(result);
         })
 
-        app.get('/arhived-property', async (req, res) => {
+        app.get('/arhived-property', verifyJWT, async (req, res) => {
+
+            const decoded = req.decoded;
+            // console.log("inside", decoded);
+            if (decoded.email !== req.query.email) {
+                res.status(403).send({ message: "forbidden access" })
+            }
+
             const email = req.query.email;
             // console.log(email);
             const query = { email: email }
@@ -453,7 +501,7 @@ async function run() {
         })
 
         //Move specific property from archive to my Property
-        app.put("/reactivate/:id", async (req, res) => {
+        app.put("/reactivate/:id", verifyJWT, async (req, res) => {
             const id = req.params.id;
             // console.log(id);
             const filter = { _id: new ObjectId(id) }
