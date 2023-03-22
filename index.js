@@ -72,13 +72,13 @@ function verifyJWT(req, res, next) {
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
-        res.status(401).send({ message: 'unauthorized access' })
+        return res.status(401).send({ message: 'unauthorized access' })
     }
 
     const token = authHeader.split(' ')[1];
     jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, function (err, decoded) {
         if (err) {
-            res.status(403).send({ message: "forbidden access" })
+            return res.status(403).send({ message: "forbidden access" })
         }
         req.decoded = decoded;
         next();
@@ -105,7 +105,7 @@ async function run() {
         //jwt
         app.post('/jwt', (req, res) => {
             const user = req.body;
-            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "1h" })
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: "24h" })
             res.send({ token })
         })
 
@@ -274,7 +274,7 @@ async function run() {
             const decoded = req.decoded;
             // console.log("inside", decoded);
             if (decoded.email !== req.query.email) {
-                res.status(403).send({ message: "forbidden access" })
+                return res.status(403).send({ message: "forbidden access" })
             }
             // email month year
             const email = req.query.email;
@@ -282,6 +282,8 @@ async function run() {
             const queryYear = req.query.year;
             const year = month ? queryYear + "-" + month : queryYear;
             const property = req.query.street;
+
+            // console.log(year);
             // query
             const propertyQuery = property
                 ? { street: property, propertyOwner: email }
@@ -301,6 +303,7 @@ async function run() {
                 .find(filter)
                 .sort({ date: -1 })
                 .toArray();
+
             // year month expenses payment variable
             let years = [];
             let months = [];
@@ -415,6 +418,9 @@ async function run() {
             });
         })
 
+
+
+
         // update table data 
         app.put('/update-calculation/:id', verifyJWT, async (req, res) => {
             const id = req.params.id;
@@ -459,14 +465,27 @@ async function run() {
         //     res.send({ data, yearCalculations });
         // })
 
-        //delete specific property
+        //delete specific property & calculations
+        // app.delete("/delete/:id", verifyJWT, async (req, res) => {
+        //         const id = req.params.id;
+        //         console.log(id);
+        //         const filter = { _id: new ObjectId(id) }
+        //         console.log(filter);
+        //         const result = await propertyCollection.deleteOne(filter);
+        //         res.send(result);
+        //     })
+
         app.delete("/delete/:id", verifyJWT, async (req, res) => {
             const id = req.params.id;
-            // console.log(id);
-            const filter = { _id: new ObjectId(id) }
-            const result = await propertyCollection.deleteOne(filter);
-            res.send(result);
-        })
+            console.log(id);
+            const filter1 = { _id: new ObjectId(id) };
+            const filter2 = { propertyId: id };
+            const result1 = await propertyCollection.deleteOne(filter1);
+            const result2 = await calculationCollection.deleteMany(filter2);
+            res.send({ result1, result2 });
+        });
+
+
 
         //Move specific property to archive
         app.put("/archived/:id", verifyJWT, async (req, res) => {
