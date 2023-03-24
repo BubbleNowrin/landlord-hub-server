@@ -252,6 +252,38 @@ async function run() {
             res.send({ calculations: result, allYear: years })
         })
 
+        // get calculation by property id 
+        // app.get("/calculations-edit/:id", verifyJWT, async (req, res) => {
+        //     const id = req.params.id;
+        //     const year = req.query.year;
+        //     const calcId = req.query.calcId;
+        //     console.log(calcId);
+        //     const filter = { propertyId: id, date: { $regex: year } };
+        //     const query = { propertyId: id }
+        //     let years = [];
+        //     const forYear = await calculationCollection.find(query).sort({ date: -1 }).toArray();
+        //     const yearsArr = forYear?.map((yrs) => {
+        //         const yr = yrs.date.slice(0, 4);
+
+        //         if (!years.includes(yr)) {
+        //             years.push(yr);
+        //         }
+        //         return years;
+        //     });
+        //     const calculations = await calculationCollection
+        //         .find(filter)
+        //         .sort({ date: -1 })
+        //         .toArray();
+
+        //     // const queryId = { _id: new ObjectId(calcId) }
+
+        //     // console.log(queryId);
+
+        //     // const singleD = calculations.map(calc => calc.find(d => d._id === queryId))
+        //     // console.log(singleD);
+        //     // res.send(singleD);
+        // })
+
         // upload photo 
         app.put("/upload_photo/:id", verifyJWT, async (req, res) => {
             const img = req.body.img;
@@ -418,9 +450,6 @@ async function run() {
             });
         })
 
-
-
-
         // update table data 
         app.put('/update-calculation/:id', verifyJWT, async (req, res) => {
             const id = req.params.id;
@@ -449,6 +478,24 @@ async function run() {
             const result = await calculationCollection.deleteOne(query);
             res.send(result)
         })
+
+        // delete Receipt 
+        app.put('/delete-receipt/:id', verifyJWT, async (req, res) => {
+            const id = req.params.id;
+            const filter = { _id: new ObjectId(id) }
+            const options = { upsert: true };
+            const updatedDoc = {
+                $set: {
+                    receipt: ""
+                },
+            };
+            // const receipt = await calculationCollection.findOne(query);
+            // const result=await calculationCollection.updateOne()
+            // res.send(result)
+            const result = await calculationCollection.updateOne(filter, updatedDoc, options);
+            res.send(result);
+        })
+
         // year specific data
         // app.get('/year/:id', async (req, res) => {
         //     const id = req.params.id;
